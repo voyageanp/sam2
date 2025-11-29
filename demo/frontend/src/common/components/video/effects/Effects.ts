@@ -15,7 +15,7 @@
  */
 import BackgroundTextEffect from './BackgroundTextEffect';
 import DesaturateEffect from './DesaturateEffect';
-import {Effect} from './Effect';
+import { Effect } from './Effect';
 import EraseBackgroundEffect from './EraseBackgroundEffect';
 import OriginalEffect from './OriginalEffect';
 import OverlayEffect from './OverlayEffect';
@@ -32,6 +32,7 @@ import ReplaceGLEffect from './ReplaceGLEffect';
 import ScopeGLEffect from './ScopeGLEffect';
 import SobelEffect from './SobelEffect';
 import VibrantMaskEffect from './VibrantMaskEffect';
+import ShrinkToBottomGLEffect from './ShrinkToBottomGLEffect';
 
 export type Effects = {
   /* Backgrounds */
@@ -54,6 +55,7 @@ export type Effects = {
   Burst: Effect;
   PixelateMask: Effect;
   Arrow: Effect;
+  ShrinkToBottom: Effect;
 
   /* More Effects */
   NoisyMask: Effect;
@@ -80,6 +82,7 @@ export default {
   Burst: new BurstGLEffect(),
   PixelateMask: new PixelateMaskGLEffect(),
   Arrow: new ArrowGLEffect(),
+  ShrinkToBottom: new ShrinkToBottomGLEffect(),
 
   /* More Effects */
   NoisyMask: new NoisyMaskEffect(),
@@ -90,45 +93,45 @@ export enum EffectIndex {
   HIGHLIGHT = 1,
 }
 
-type EffectComboItem = {name: keyof Effects; variant: number};
+type EffectComboItem = { name: keyof Effects; variant: number };
 
 export type EffectsCombo = [EffectComboItem, EffectComboItem];
 
 export const effectPresets: EffectsCombo[] = [
   [
-    {name: 'Original', variant: 0},
-    {name: 'Overlay', variant: 0},
+    { name: 'Original', variant: 0 },
+    { name: 'Overlay', variant: 0 },
   ],
   [
-    {name: 'Desaturate', variant: 0},
-    {name: 'Burst', variant: 2},
+    { name: 'Desaturate', variant: 0 },
+    { name: 'Burst', variant: 2 },
   ],
   [
-    {name: 'Desaturate', variant: 1},
-    {name: 'VibrantMask', variant: 0},
+    { name: 'Desaturate', variant: 1 },
+    { name: 'VibrantMask', variant: 0 },
   ],
   [
-    {name: 'BackgroundText', variant: 1},
-    {name: 'Cutout', variant: 0},
+    { name: 'BackgroundText', variant: 1 },
+    { name: 'Cutout', variant: 0 },
   ],
   [
-    {name: 'Original', variant: 0},
-    {name: 'PixelateMask', variant: 1},
+    { name: 'Original', variant: 0 },
+    { name: 'PixelateMask', variant: 1 },
   ],
   [
-    {name: 'Desaturate', variant: 2},
-    {name: 'Cutout', variant: 0},
+    { name: 'Desaturate', variant: 2 },
+    { name: 'Cutout', variant: 0 },
   ],
   [
-    {name: 'Sobel', variant: 3},
-    {name: 'Cutout', variant: 1},
+    { name: 'Sobel', variant: 3 },
+    { name: 'Cutout', variant: 1 },
   ],
   [
-    {name: 'Sobel', variant: 2},
-    {name: 'EraseForeground', variant: 2},
+    { name: 'Sobel', variant: 2 },
+    { name: 'EraseForeground', variant: 2 },
   ],
   [
-    {name: 'EraseBackground', variant: 0},
-    {name: 'EraseForeground', variant: 0},
+    { name: 'EraseBackground', variant: 0 },
+    { name: 'EraseForeground', variant: 0 },
   ],
 ];

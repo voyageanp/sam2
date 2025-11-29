@@ -19,10 +19,10 @@ import {
   EffectIndex,
   effectPresets,
 } from '@/common/components/video/effects/Effects';
-import {BLUE_PINK_FILL} from '@/theme/gradientStyle';
-import {MagicWandFilled} from '@carbon/icons-react';
-import {useCallback, useRef} from 'react';
-import {Button} from 'react-daisyui';
+import { BLUE_PINK_FILL } from '@/theme/gradientStyle';
+import { MagicWandFilled, ShrinkScreenFilled } from '@carbon/icons-react';
+import { useCallback, useRef } from 'react';
+import { Button } from 'react-daisyui';
 
 export default function EffectsToolbarHeader() {
   const preset = useRef(0);
@@ -40,6 +40,12 @@ export default function EffectsToolbarHeader() {
     });
   }, [setEffect]);
 
+  const handleShrinkToBottom = useCallback(() => {
+    setEffect('ShrinkToBottom', EffectIndex.HIGHLIGHT, {
+      variant: 0,
+    });
+  }, [setEffect]);
+
   return (
     <ToolbarHeaderWrapper
       title="Add effects"
@@ -53,6 +59,14 @@ export default function EffectsToolbarHeader() {
             endIcon={<MagicWandFilled size={20} className="text-white " />}
             onClick={handleTogglePreset}>
             Surprise Me
+          </Button>
+          <Button
+            color="ghost"
+            size="md"
+            className="font-medium bg-black !rounded-full hover:!bg-gray-800 border-none ml-2 text-white"
+            endIcon={<ShrinkScreenFilled size={20} className="text-white" />}
+            onClick={handleShrinkToBottom}>
+            Shrink & Align
           </Button>
         </div>
       }
