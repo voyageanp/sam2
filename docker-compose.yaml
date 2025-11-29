@@ -18,6 +18,7 @@ services:
       - ./demo/data/:/data/:rw
     environment:
       - SERVER_ENVIRONMENT=DEV
+      - MODEL_SIZE=base_plus # tiny, small, base_plus, large
       - GUNICORN_WORKERS=1
       # Inference API needs to have at least 2 threads to handle an incoming
       # parallel cancel propagation request
