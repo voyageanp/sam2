@@ -15,6 +15,9 @@ API_URL = os.getenv("API_URL", "http://localhost:7263")
 
 MODEL_SIZE = os.getenv("MODEL_SIZE", "base_plus")
 
+# Whether to save the raw model predictions (logits) to disk
+SAVE_PREDICTIONS = os.getenv("SAVE_PREDICTIONS", "0") == "1"
+
 logger.info(f"using model size {MODEL_SIZE}")
 
 FFMPEG_NUM_THREADS = int(os.getenv("FFMPEG_NUM_THREADS", "1"))

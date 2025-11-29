@@ -13,7 +13,7 @@ from typing import Any, Dict, Generator, List
 
 import numpy as np
 import torch
-from app_conf import APP_ROOT, MODEL_SIZE
+from app_conf import APP_ROOT, DATA_PATH, MODEL_SIZE, SAVE_PREDICTIONS
 from inference.data_types import (
     AddMaskRequest,
     AddPointsRequest,
@@ -275,6 +275,12 @@ class InferenceAPI:
         propagation_direction = "both"
         max_frame_num_to_track = None
 
+        if SAVE_PREDICTIONS:
+            # Create directory for saving predictions
+            save_dir = DATA_PATH / "predictions" / session_id
+            os.makedirs(save_dir, exist_ok=True)
+            logger.info(f"Saving predictions to {save_dir}")
+
         """
         Propagate existing input points in all frames to track the object across video.
         """
@@ -310,6 +316,14 @@ class InferenceAPI:
                             return None
 
                         frame_idx, obj_ids, video_res_masks = outputs
+
+                        if SAVE_PREDICTIONS:
+                            # Save raw logits to numpy file
+                            masks_np = video_res_masks.cpu().numpy()
+                            save_path = save_dir / f"frame_{frame_idx:05d}.npy"
+                            np.save(save_path, masks_np)
+                            # Save object IDs as well
+                            np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
                         masks_binary = (
                             (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
                         )
@@ -335,6 +349,14 @@ class InferenceAPI:
                             return None
 
                         frame_idx, obj_ids, video_res_masks = outputs
+
+                        if SAVE_PREDICTIONS:
+                            # Save raw logits to numpy file
+                            masks_np = video_res_masks.cpu().numpy()
+                            save_path = save_dir / f"frame_{frame_idx:05d}.npy"
+                            np.save(save_path, masks_np)
+                            # Save object IDs as well
+                            np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
                         masks_binary = (
                             (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
                         )
