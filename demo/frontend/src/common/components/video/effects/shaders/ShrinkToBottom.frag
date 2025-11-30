@@ -15,14 +15,36 @@ uniform vec4 uMaskBounds0;
 uniform vec4 uMaskBounds1;
 uniform vec4 uMaskBounds2;
 
+uniform float uShrinkRatio;
+
 in vec2 vTexCoord;
 out vec4 outColor;
 
 void main() {
-  vec4 color = texture(uSampler, vTexCoord);
-  vec4 finalColor = color;
+  vec4 finalColor = texture(uSampler, vTexCoord);
+  bool isOriginalObject = false;
 
-  // Iterate over masks
+  // 1. Check if pixel is part of ANY original mask (to be erased)
+  for (int i = 0; i < 3; i++) {
+    if (i >= uNumMasks) break;
+    
+    sampler2D maskTexture;
+    if (i == 0) maskTexture = uMaskTexture0;
+    else if (i == 1) maskTexture = uMaskTexture1;
+    else maskTexture = uMaskTexture2;
+
+    float maskVal = texture(maskTexture, vTexCoord).r;
+    if (maskVal > 0.5) {
+      isOriginalObject = true;
+      break;
+    }
+  }
+
+  if (isOriginalObject) {
+    finalColor = vec4(1.0, 1.0, 1.0, 1.0); // Make it white
+  }
+
+  // 2. Check if pixel is part of the SHRUNK object (to be drawn)
   for (int i = 0; i < 3; i++) {
     if (i >= uNumMasks) break;
 
@@ -49,10 +71,6 @@ void main() {
     float width = maxX - minX;
     float height = maxY - minY;
 
-uniform float uShrinkRatio;
-
-// ...
-
     // Target bounds (uShrinkRatio size, aligned to bottom center)
     float scale = uShrinkRatio;
     float newWidth = width * scale;
@@ -64,39 +82,12 @@ uniform float uShrinkRatio;
     float newMinY = newMaxY - newHeight;
 
     // Current pixel position in pixels
-    float px = vTexCoord.x * uSize.x;
-    float py = (1.0 - vTexCoord.y) * uSize.y; // WebGL Y is flipped relative to pixel coords usually? 
-    // Wait, vTexCoord (0,0) is bottom-left in WebGL usually.
-    // uSampler is usually flipped or not?
-    // In BaseGLEffect: gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    // And texCoordBufferData is [1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0] (Triangle Strip)
-    // Vertices: 1.0, 1.0 (TR), -1.0, 1.0 (TL), 1.0, -1.0 (BR), -1.0, -1.0 (BL)
-    // TexCoords: 1,1 (TR), 0,1 (TL), 1,0 (BR), 0,0 (BL)
-    // So vTexCoord (0,0) is Bottom-Left, (1,1) is Top-Right.
-    
-    // However, image coordinates usually have (0,0) at Top-Left.
-    // If UNPACK_FLIP_Y_WEBGL is true, the texture is flipped.
-    // So texture(uSampler, vec2(0,0)) samples the bottom-left of the image data?
-    // Or does it sample the top-left because it was flipped?
-    
-    // Let's assume standard UV: u=x/width, v=1.0 - y/height (if y is 0 at top)
-    // If vTexCoord.y=0 is bottom, and image y=0 is top.
-    
-    // Let's look at how other shaders handle this or assume standard behavior.
-    // Cutout.frag doesn't use coordinates, just samples.
-    
-    // Let's use normalized coordinates for bounds to simplify.
-    // Bounds are likely in pixels (based on EffectFrameContext).
-    
-    // Convert current pixel to pixel coords (origin top-left for logic, but need to match texture)
-    // If vTexCoord.y=1 is Top.
     float currentX = vTexCoord.x * uSize.x;
     float currentY = (1.0 - vTexCoord.y) * uSize.y; // 0 at top, H at bottom
 
     // Check if current pixel is inside the "new" (shrunk) bounds
     if (currentX >= newMinX && currentX <= newMaxX && currentY >= newMinY && currentY <= newMaxY) {
       // Map back to original object coordinates
-      // (currentX - newMinX) / newWidth = (origX - minX) / width
       float normalizedX = (currentX - newMinX) / newWidth;
       float normalizedY = (currentY - newMinY) / newHeight;
 
@@ -107,18 +98,11 @@ uniform float uShrinkRatio;
       vec2 origUV = vec2(origX / uSize.x, 1.0 - (origY / uSize.y));
 
       // Sample mask at original location
-      // Mask textures are likely LUMINANCE, so .r is the value.
       float maskVal = texture(maskTexture, origUV).r;
 
       if (maskVal > 0.5) {
         // It's part of the object in the original scale
-        // Sample the original image color at that location
-        vec4 objColor = texture(uSampler, origUV);
-        
-        // Overlay logic: simple alpha blend or replacement
-        // Since we want to "layer" it, we can just replace or blend.
-        // Let's replace for now, maybe blend with alpha if objColor has alpha (usually video is opaque)
-        finalColor = objColor;
+        finalColor = texture(uSampler, origUV);
       }
     }
   }
