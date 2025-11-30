@@ -17,12 +17,13 @@ import EffectVariantBadge from '@/common/components/effects/EffectVariantBadge';
 import ToolbarActionIcon from '@/common/components/toolbar/ToolbarActionIcon';
 import ToolbarSection from '@/common/components/toolbar/ToolbarSection';
 import useVideoEffect from '@/common/components/video/editor/useVideoEffect';
-import {EffectIndex} from '@/common/components/video/effects/Effects';
+import { EffectIndex } from '@/common/components/video/effects/Effects';
 import {
   activeHighlightEffectAtom,
   activeHighlightEffectGroupAtom,
 } from '@/demo/atoms';
-import {useAtomValue} from 'jotai';
+import { useAtomValue } from 'jotai';
+import { Range } from 'react-daisyui';
 
 export default function HighlightEffects() {
   const setEffect = useVideoEffect();
@@ -30,35 +31,54 @@ export default function HighlightEffects() {
   const activeEffectsGroup = useAtomValue(activeHighlightEffectGroupAtom);
 
   return (
-    <ToolbarSection title="Selected Objects" borderBottom={true}>
-      {activeEffectsGroup.map(highlightEffect => {
-        return (
-          <ToolbarActionIcon
-            variant="toggle"
-            key={highlightEffect.title}
-            icon={highlightEffect.Icon}
-            title={highlightEffect.title}
-            isActive={activeEffect.name === highlightEffect.effectName}
-            badge={
-              activeEffect.name === highlightEffect.effectName && (
-                <EffectVariantBadge
-                  label={`${activeEffect.variant + 1}/${activeEffect.numVariants}`}
-                />
-              )
-            }
-            onClick={() => {
-              if (activeEffect.name === highlightEffect.effectName) {
-                setEffect(highlightEffect.effectName, EffectIndex.HIGHLIGHT, {
-                  variant:
-                    (activeEffect.variant + 1) % activeEffect.numVariants,
-                });
-              } else {
-                setEffect(highlightEffect.effectName, EffectIndex.HIGHLIGHT);
+    <>
+      <ToolbarSection title="Selected Objects" borderBottom={true}>
+        {activeEffectsGroup.map(highlightEffect => {
+          return (
+            <ToolbarActionIcon
+              variant="toggle"
+              key={highlightEffect.title}
+              icon={highlightEffect.Icon}
+              title={highlightEffect.title}
+              isActive={activeEffect.name === highlightEffect.effectName}
+              badge={
+                activeEffect.name === highlightEffect.effectName && (
+                  <EffectVariantBadge
+                    label={`${activeEffect.variant + 1}/${activeEffect.numVariants}`}
+                  />
+                )
               }
+              onClick={() => {
+                if (activeEffect.name === highlightEffect.effectName) {
+                  setEffect(highlightEffect.effectName, EffectIndex.HIGHLIGHT, {
+                    variant:
+                      (activeEffect.variant + 1) % activeEffect.numVariants,
+                  });
+                } else {
+                  setEffect(highlightEffect.effectName, EffectIndex.HIGHLIGHT);
+                }
+              }}
+            />
+          );
+        })}
+      </ToolbarSection>
+      {activeEffect.name === 'ShrinkToBottom' && (
+        <div className="p-4">
+          <div className="text-sm mb-2">Shrink Ratio: {activeEffect.shrinkRatio ?? 0.9}</div>
+          <Range
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={activeEffect.shrinkRatio ?? 0.9}
+            onChange={e => {
+              setEffect('ShrinkToBottom', EffectIndex.HIGHLIGHT, {
+                variant: 0,
+                shrinkRatio: parseFloat(e.target.value),
+              });
             }}
           />
-        );
-      })}
-    </ToolbarSection>
+        </div>
+      )}
+    </>
   );
 }

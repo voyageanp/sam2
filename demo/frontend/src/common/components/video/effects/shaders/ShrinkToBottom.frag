@@ -49,8 +49,12 @@ void main() {
     float width = maxX - minX;
     float height = maxY - minY;
 
-    // Target bounds (0.9x size, aligned to bottom center)
-    float scale = 0.9;
+uniform float uShrinkRatio;
+
+// ...
+
+    // Target bounds (uShrinkRatio size, aligned to bottom center)
+    float scale = uShrinkRatio;
     float newWidth = width * scale;
     float newHeight = height * scale;
 

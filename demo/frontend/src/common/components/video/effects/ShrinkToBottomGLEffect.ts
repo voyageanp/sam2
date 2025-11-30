@@ -17,6 +17,7 @@ import BaseGLEffect from '@/common/components/video/effects/BaseGLEffect';
 import {
     EffectFrameContext,
     EffectInit,
+    EffectOptions,
 } from '@/common/components/video/effects/Effect';
 import fragmentShaderSource from '@/common/components/video/effects/shaders/ShrinkToBottom.frag?raw';
 import vertexShaderSource from '@/common/components/video/effects/shaders/DefaultVert.vert?raw';
@@ -29,6 +30,7 @@ import { CanvasForm } from 'pts';
 export default class ShrinkToBottomGLEffect extends BaseGLEffect {
     private _numMasks: number = 0;
     private _numMasksUniformLocation: WebGLUniformLocation | null = null;
+    private _shrinkRatio: number = 0.9;
 
     // Must from start 1, main texture takes 0.
     private _masksTextureUnitStart: number = 1;
@@ -38,6 +40,13 @@ export default class ShrinkToBottomGLEffect extends BaseGLEffect {
         super(1); // 1 variant
         this.vertexShaderSource = vertexShaderSource;
         this.fragmentShaderSource = fragmentShaderSource;
+    }
+
+    async update(options: EffectOptions): Promise<void> {
+        await super.update(options);
+        if (options.shrinkRatio !== undefined) {
+            this._shrinkRatio = options.shrinkRatio;
+        }
     }
 
     protected setupUniforms(
@@ -68,6 +77,7 @@ export default class ShrinkToBottomGLEffect extends BaseGLEffect {
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.uniform1i(this._numMasksUniformLocation, context.masks.length);
+        gl.uniform1f(gl.getUniformLocation(program, 'uShrinkRatio'), this._shrinkRatio);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this._frameTexture);

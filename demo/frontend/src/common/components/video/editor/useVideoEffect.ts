@@ -18,11 +18,11 @@ import {
   activeBackgroundEffectAtom,
   activeHighlightEffectAtom,
 } from '@/demo/atoms';
-import {useSetAtom} from 'jotai';
-import {useCallback, useEffect} from 'react';
-import {EffectUpdateEvent} from '../VideoWorkerBridge';
-import {EffectOptions} from '../effects/Effect';
-import Effects, {EffectIndex, Effects as EffectsType} from '../effects/Effects';
+import { useSetAtom } from 'jotai';
+import { useCallback, useEffect } from 'react';
+import { EffectUpdateEvent } from '../VideoWorkerBridge';
+import { EffectOptions } from '../effects/Effect';
+import Effects, { EffectIndex, Effects as EffectsType } from '../effects/Effects';
 
 export default function useVideoEffect() {
   const video = useVideo();
@@ -64,6 +64,7 @@ export default function useVideoEffect() {
           name,
           variant: options?.variant ?? 0,
           numVariants: effect.numVariants,
+          shrinkRatio: options?.shrinkRatio,
         });
       }
     },
