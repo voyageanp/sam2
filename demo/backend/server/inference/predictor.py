@@ -13,7 +13,7 @@ from typing import Any, Dict, Generator, List
 
 import numpy as np
 import torch
-from app_conf import APP_ROOT, DATA_PATH, MODEL_SIZE, SAVE_PREDICTIONS
+from app_conf import APP_ROOT, DATA_PATH, MODEL_SIZE, SAVE_PREDICTIONS, INFERENCE_MODE, CHUNK_SIZE
 from inference.data_types import (
     AddMaskRequest,
     AddPointsRequest,
@@ -103,13 +103,20 @@ class InferenceAPI:
             # for MPS devices, we offload the video frames to CPU by default to avoid
             # memory fragmentation in MPS (which sometimes crashes the entire process)
             offload_video_to_cpu = self.device.type == "mps"
+            
+            max_frames = None
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                max_frames = CHUNK_SIZE
+                
             inference_state = self.predictor.init_state(
                 request.path,
                 offload_video_to_cpu=offload_video_to_cpu,
+                max_frames=max_frames,
             )
             self.session_states[session_id] = {
                 "canceled": False,
                 "state": inference_state,
+                "video_path": request.path, # Store video path for reloading chunks
             }
             return StartSessionResponse(session_id=session_id)
 
@@ -129,6 +136,38 @@ class InferenceAPI:
             points = request.points
             labels = request.labels
             clear_old_points = request.clear_old_points
+            
+            # Handle chunk reloading if needed
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                start_frame_offset = inference_state.get("start_frame_offset", 0)
+                num_frames = inference_state["num_frames"]
+                
+                if not (start_frame_offset <= frame_idx < start_frame_offset + num_frames):
+                    # Frame is outside current chunk, reload
+                    new_start_frame = (frame_idx // CHUNK_SIZE) * CHUNK_SIZE
+                    logger.info(f"Reloading chunk for frame {frame_idx}. New start: {new_start_frame}")
+                    
+                    # We need to preserve the object IDs and maybe some state?
+                    # For now, we just reset and load the new chunk. 
+                    # WARNING: This clears previous tracking history in other chunks.
+                    # But since we are adding points, maybe it's a new start or correction.
+                    
+                    video_path = session.get("video_path")
+                    if not video_path:
+                         raise RuntimeError("Video path not found in session")
+                         
+                    offload_video_to_cpu = self.device.type == "mps"
+                    inference_state = self.predictor.init_state(
+                        video_path,
+                        offload_video_to_cpu=offload_video_to_cpu,
+                        start_frame=new_start_frame,
+                        max_frames=CHUNK_SIZE,
+                    )
+                    session["state"] = inference_state
+                    start_frame_offset = new_start_frame
+                
+                # Adjust to local index
+                frame_idx = frame_idx - start_frame_offset
 
             # add new prompts and instantly get the output on the same frame
             frame_idx, object_ids, masks = self.predictor.add_new_points_or_box(
@@ -146,9 +185,14 @@ class InferenceAPI:
             rle_mask_list = self.__get_rle_mask_list(
                 object_ids=object_ids, masks=masks_binary
             )
+            
+            # Return global frame index
+            global_frame_idx = frame_idx
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                global_frame_idx = frame_idx + start_frame_offset
 
             return PropagateDataResponse(
-                frame_index=frame_idx,
+                frame_index=global_frame_idx,
                 results=rle_mask_list,
             )
 
@@ -174,6 +218,33 @@ class InferenceAPI:
             )
             session = self.__get_session(session_id)
             inference_state = session["state"]
+            
+            # Handle chunk reloading if needed
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                start_frame_offset = inference_state.get("start_frame_offset", 0)
+                num_frames = inference_state["num_frames"]
+                
+                if not (start_frame_offset <= frame_idx < start_frame_offset + num_frames):
+                    # Frame is outside current chunk, reload
+                    new_start_frame = (frame_idx // CHUNK_SIZE) * CHUNK_SIZE
+                    logger.info(f"Reloading chunk for frame {frame_idx}. New start: {new_start_frame}")
+                    
+                    video_path = session.get("video_path")
+                    if not video_path:
+                         raise RuntimeError("Video path not found in session")
+                         
+                    offload_video_to_cpu = self.device.type == "mps"
+                    inference_state = self.predictor.init_state(
+                        video_path,
+                        offload_video_to_cpu=offload_video_to_cpu,
+                        start_frame=new_start_frame,
+                        max_frames=CHUNK_SIZE,
+                    )
+                    session["state"] = inference_state
+                    start_frame_offset = new_start_frame
+                
+                # Adjust to local index
+                frame_idx = frame_idx - start_frame_offset
 
             frame_idx, obj_ids, video_res_masks = self.model.add_new_mask(
                 inference_state=inference_state,
@@ -186,9 +257,14 @@ class InferenceAPI:
             rle_mask_list = self.__get_rle_mask_list(
                 object_ids=obj_ids, masks=masks_binary
             )
+            
+            # Return global frame index
+            global_frame_idx = frame_idx
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                global_frame_idx = frame_idx + start_frame_offset
 
             return PropagateDataResponse(
-                frame_index=frame_idx,
+                frame_index=global_frame_idx,
                 results=rle_mask_list,
             )
 
@@ -208,6 +284,34 @@ class InferenceAPI:
             )
             session = self.__get_session(session_id)
             inference_state = session["state"]
+            
+            # Handle chunk reloading if needed
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                start_frame_offset = inference_state.get("start_frame_offset", 0)
+                num_frames = inference_state["num_frames"]
+                
+                if not (start_frame_offset <= frame_idx < start_frame_offset + num_frames):
+                    # Frame is outside current chunk, reload
+                    new_start_frame = (frame_idx // CHUNK_SIZE) * CHUNK_SIZE
+                    logger.info(f"Reloading chunk for frame {frame_idx}. New start: {new_start_frame}")
+                    
+                    video_path = session.get("video_path")
+                    if not video_path:
+                         raise RuntimeError("Video path not found in session")
+                         
+                    offload_video_to_cpu = self.device.type == "mps"
+                    inference_state = self.predictor.init_state(
+                        video_path,
+                        offload_video_to_cpu=offload_video_to_cpu,
+                        start_frame=new_start_frame,
+                        max_frames=CHUNK_SIZE,
+                    )
+                    session["state"] = inference_state
+                    start_frame_offset = new_start_frame
+                
+                # Adjust to local index
+                frame_idx = frame_idx - start_frame_offset
+
             frame_idx, obj_ids, video_res_masks = (
                 self.predictor.clear_all_prompts_in_frame(
                     inference_state, frame_idx, obj_id
@@ -218,9 +322,14 @@ class InferenceAPI:
             rle_mask_list = self.__get_rle_mask_list(
                 object_ids=obj_ids, masks=masks_binary
             )
+            
+            # Return global frame index
+            global_frame_idx = frame_idx
+            if INFERENCE_MODE == "cut-and-selected-frame-concat":
+                global_frame_idx = frame_idx + start_frame_offset
 
             return PropagateDataResponse(
-                frame_index=frame_idx,
+                frame_index=global_frame_idx,
                 results=rle_mask_list,
             )
 
@@ -298,77 +407,187 @@ class InferenceAPI:
                 session = self.__get_session(session_id)
                 session["canceled"] = False
 
-                inference_state = session["state"]
-                if propagation_direction not in ["both", "forward", "backward"]:
-                    raise ValueError(
-                        f"invalid propagation direction: {propagation_direction}"
-                    )
-
-                # First doing the forward propagation
-                if propagation_direction in ["both", "forward"]:
-                    for outputs in self.predictor.propagate_in_video(
-                        inference_state=inference_state,
-                        start_frame_idx=start_frame_idx,
-                        max_frame_num_to_track=max_frame_num_to_track,
-                        reverse=False,
-                    ):
-                        if session["canceled"]:
-                            return None
-
-                        frame_idx, obj_ids, video_res_masks = outputs
-
-                        if SAVE_PREDICTIONS:
-                            # Save raw logits to numpy file
-                            masks_np = video_res_masks.cpu().numpy()
-                            save_path = save_dir / f"frame_{frame_idx:05d}.npy"
-                            np.save(save_path, masks_np)
-                            # Save object IDs as well
-                            np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
-                        masks_binary = (
-                            (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
+                if INFERENCE_MODE != "cut-and-selected-frame-concat":
+                    # Original implementation for standard mode
+                    inference_state = session["state"]
+                    if propagation_direction not in ["both", "forward", "backward"]:
+                        raise ValueError(
+                            f"invalid propagation direction: {propagation_direction}"
                         )
 
-                        rle_mask_list = self.__get_rle_mask_list(
-                            object_ids=obj_ids, masks=masks_binary
-                        )
+                    # First doing the forward propagation
+                    if propagation_direction in ["both", "forward"]:
+                        for outputs in self.predictor.propagate_in_video(
+                            inference_state=inference_state,
+                            start_frame_idx=start_frame_idx,
+                            max_frame_num_to_track=max_frame_num_to_track,
+                            reverse=False,
+                        ):
+                            if session["canceled"]:
+                                return None
 
-                        yield PropagateDataResponse(
-                            frame_index=frame_idx,
-                            results=rle_mask_list,
-                        )
+                            frame_idx, obj_ids, video_res_masks = outputs
 
-                # Then doing the backward propagation (reverse in time)
-                if propagation_direction in ["both", "backward"]:
-                    for outputs in self.predictor.propagate_in_video(
-                        inference_state=inference_state,
-                        start_frame_idx=start_frame_idx,
-                        max_frame_num_to_track=max_frame_num_to_track,
-                        reverse=True,
-                    ):
-                        if session["canceled"]:
-                            return None
+                            if SAVE_PREDICTIONS:
+                                # Save raw logits to numpy file
+                                masks_np = video_res_masks.cpu().numpy()
+                                save_path = save_dir / f"frame_{frame_idx:05d}.npy"
+                                np.save(save_path, masks_np)
+                                # Save object IDs as well
+                                np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
+                            masks_binary = (
+                                (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
+                            )
 
-                        frame_idx, obj_ids, video_res_masks = outputs
+                            rle_mask_list = self.__get_rle_mask_list(
+                                object_ids=obj_ids, masks=masks_binary
+                            )
 
-                        if SAVE_PREDICTIONS:
-                            # Save raw logits to numpy file
-                            masks_np = video_res_masks.cpu().numpy()
-                            save_path = save_dir / f"frame_{frame_idx:05d}.npy"
-                            np.save(save_path, masks_np)
-                            # Save object IDs as well
-                            np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
-                        masks_binary = (
-                            (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
-                        )
+                            yield PropagateDataResponse(
+                                frame_index=frame_idx,
+                                results=rle_mask_list,
+                            )
 
-                        rle_mask_list = self.__get_rle_mask_list(
-                            object_ids=obj_ids, masks=masks_binary
-                        )
+                    # Then doing the backward propagation (reverse in time)
+                    if propagation_direction in ["both", "backward"]:
+                        for outputs in self.predictor.propagate_in_video(
+                            inference_state=inference_state,
+                            start_frame_idx=start_frame_idx,
+                            max_frame_num_to_track=max_frame_num_to_track,
+                            reverse=True,
+                        ):
+                            if session["canceled"]:
+                                return None
 
-                        yield PropagateDataResponse(
-                            frame_index=frame_idx,
-                            results=rle_mask_list,
-                        )
+                            frame_idx, obj_ids, video_res_masks = outputs
+
+                            if SAVE_PREDICTIONS:
+                                # Save raw logits to numpy file
+                                masks_np = video_res_masks.cpu().numpy()
+                                save_path = save_dir / f"frame_{frame_idx:05d}.npy"
+                                np.save(save_path, masks_np)
+                                # Save object IDs as well
+                                np.save(save_dir / f"frame_{frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
+                            masks_binary = (
+                                (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
+                            )
+
+                            rle_mask_list = self.__get_rle_mask_list(
+                                object_ids=obj_ids, masks=masks_binary
+                            )
+
+                            yield PropagateDataResponse(
+                                frame_index=frame_idx,
+                                results=rle_mask_list,
+                            )
+                else:
+                    # Chunked implementation
+                    while True:
+                        inference_state = session["state"]
+                        start_frame_offset = inference_state.get("start_frame_offset", 0)
+                        num_frames = inference_state["num_frames"]
+                        
+                        # Check if we need to jump to a different chunk
+                        if start_frame_idx >= start_frame_offset + num_frames:
+                             new_start_frame = (start_frame_idx // CHUNK_SIZE) * CHUNK_SIZE
+                             logger.info(f"Jumping to chunk starting at {new_start_frame}")
+                             
+                             video_path = session.get("video_path")
+                             offload_video_to_cpu = self.device.type == "mps"
+                             inference_state = self.predictor.init_state(
+                                video_path,
+                                offload_video_to_cpu=offload_video_to_cpu,
+                                start_frame=new_start_frame,
+                                max_frames=CHUNK_SIZE,
+                             )
+                             session["state"] = inference_state
+                             start_frame_offset = new_start_frame
+                             num_frames = inference_state["num_frames"]
+                        
+                        local_start_frame_idx = max(0, start_frame_idx - start_frame_offset)
+                        last_frame_output = None
+                        
+                        # Run propagation on current chunk (Forward only)
+                        for outputs in self.predictor.propagate_in_video(
+                            inference_state=inference_state,
+                            start_frame_idx=local_start_frame_idx,
+                            max_frame_num_to_track=None,
+                            reverse=False,
+                        ):
+                            if session["canceled"]:
+                                return None
+
+                            frame_idx, obj_ids, video_res_masks = outputs
+                            global_frame_idx = frame_idx + start_frame_offset
+                            
+                            # Capture last frame output
+                            if frame_idx == num_frames - 1:
+                                last_frame_output = (obj_ids, video_res_masks)
+                            
+                            # Skip frames before requested start (e.g. overlap)
+                            if global_frame_idx < start_frame_idx:
+                                continue
+
+                            if SAVE_PREDICTIONS:
+                                masks_np = video_res_masks.cpu().numpy()
+                                save_path = save_dir / f"frame_{global_frame_idx:05d}.npy"
+                                np.save(save_path, masks_np)
+                                np.save(save_dir / f"frame_{global_frame_idx:05d}_obj_ids.npy", np.array(obj_ids))
+                                
+                            masks_binary = (
+                                (video_res_masks > self.score_thresh)[:, 0].cpu().numpy()
+                            )
+
+                            rle_mask_list = self.__get_rle_mask_list(
+                                object_ids=obj_ids, masks=masks_binary
+                            )
+
+                            yield PropagateDataResponse(
+                                frame_index=global_frame_idx,
+                                results=rle_mask_list,
+                            )
+                            
+                        # Prepare for next chunk
+                        if last_frame_output:
+                             obj_ids, masks = last_frame_output
+                             new_start_offset = start_frame_offset + num_frames - 1 # Overlap 1 frame
+                             
+                             # Load next chunk
+                             video_path = session.get("video_path")
+                             offload_video_to_cpu = self.device.type == "mps"
+                             
+                             try:
+                                 new_inference_state = self.predictor.init_state(
+                                    video_path,
+                                    offload_video_to_cpu=offload_video_to_cpu,
+                                    start_frame=new_start_offset,
+                                    max_frames=CHUNK_SIZE,
+                                 )
+                             except Exception as e:
+                                 logger.info(f"End of video or error loading next chunk: {e}")
+                                 break
+                                 
+                             if new_inference_state["num_frames"] <= 1:
+                                 break
+                                 
+                             session["state"] = new_inference_state
+                             
+                             # Add mask to frame 0 of new chunk
+                             masks_binary = (masks > self.score_thresh)[:, 0]
+                             for i, obj_id in enumerate(obj_ids):
+                                 mask_i = masks_binary[i]
+                                 self.predictor.add_new_mask(
+                                     new_inference_state,
+                                     frame_idx=0,
+                                     obj_id=obj_id,
+                                     mask=mask_i
+                                 )
+                                 
+                             # Update start_frame_idx to skip the first frame (overlap)
+                             start_frame_idx = new_start_offset + 1
+                        else:
+                            break
+
             finally:
                 # Log upon completion (so that e.g. we can see if two propagations happen in parallel).
                 # Using `finally` here to log even when the tracking is aborted with GeneratorExit.
@@ -401,7 +620,8 @@ class InferenceAPI:
         Create a data value for an object/mask combo.
         """
         mask_rle = encode_masks(np.array(mask, dtype=np.uint8, order="F"))
-        mask_rle["counts"] = mask_rle["counts"].decode()
+        if isinstance(mask_rle["counts"], bytes):
+            mask_rle["counts"] = mask_rle["counts"].decode()
         return PropagateDataValue(
             object_id=object_id,
             mask=Mask(

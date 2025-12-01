@@ -18,6 +18,12 @@ MODEL_SIZE = os.getenv("MODEL_SIZE", "base_plus")
 # Whether to save the raw model predictions (logits) to disk
 SAVE_PREDICTIONS = os.getenv("SAVE_PREDICTIONS", "0") == "1"
 
+# Inference mode: "original-entire" or "cut-and-selected-frame-concat"
+INFERENCE_MODE = os.getenv("INFERENCE_MODE", "original-entire")
+
+# Chunk size for "cut-and-selected-frame-concat" mode
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "300"))
+
 logger.info(f"using model size {MODEL_SIZE}")
 
 FFMPEG_NUM_THREADS = int(os.getenv("FFMPEG_NUM_THREADS", "1"))

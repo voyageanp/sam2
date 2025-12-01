@@ -45,6 +45,8 @@ class SAM2VideoPredictor(SAM2Base):
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
         async_loading_frames=False,
+        start_frame=0,
+        max_frames=None,
     ):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
@@ -54,6 +56,8 @@ class SAM2VideoPredictor(SAM2Base):
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            start_frame=start_frame,
+            max_frames=max_frames,
         )
         inference_state = {}
         inference_state["images"] = images
@@ -94,6 +98,10 @@ class SAM2VideoPredictor(SAM2Base):
         # (we directly use their consolidated outputs during tracking)
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["frames_tracked_per_obj"] = {}
+        
+        # Store the start frame offset to map local frame indices to global video indices
+        inference_state["start_frame_offset"] = start_frame
+        
         # Warm up the visual backbone and cache the image feature on frame 0
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
         return inference_state

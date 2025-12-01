@@ -114,14 +114,22 @@ class AsyncVideoFrameLoader:
         img_mean,
         img_std,
         compute_device,
+        start_frame=0,
+        max_frames=None,
     ):
         self.img_paths = img_paths
         self.image_size = image_size
         self.offload_video_to_cpu = offload_video_to_cpu
         self.img_mean = img_mean
         self.img_std = img_std
+        
+        if max_frames is not None:
+            self.img_paths = self.img_paths[start_frame : start_frame + max_frames]
+        else:
+            self.img_paths = self.img_paths[start_frame:]
+            
         # items in `self.images` will be loaded asynchronously
-        self.images = [None] * len(img_paths)
+        self.images = [None] * len(self.img_paths)
         # catch and raise any exceptions in the async loading thread
         self.exception = None
         # video_height and video_width be filled when loading the first image
@@ -177,6 +185,8 @@ def load_video_frames(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    start_frame=0,
+    max_frames=None,
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -193,6 +203,8 @@ def load_video_frames(
             img_mean=img_mean,
             img_std=img_std,
             compute_device=compute_device,
+            start_frame=start_frame,
+            max_frames=max_frames,
         )
     elif is_str and os.path.isdir(video_path):
         return load_video_frames_from_jpg_images(
@@ -203,6 +215,8 @@ def load_video_frames(
             img_std=img_std,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            start_frame=start_frame,
+            max_frames=max_frames,
         )
     else:
         raise NotImplementedError(
@@ -218,6 +232,8 @@ def load_video_frames_from_jpg_images(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    start_frame=0,
+    max_frames=None,
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -246,6 +262,12 @@ def load_video_frames_from_jpg_images(
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
     frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    
+    if max_frames is not None:
+        frame_names = frame_names[start_frame : start_frame + max_frames]
+    else:
+        frame_names = frame_names[start_frame:]
+        
     num_frames = len(frame_names)
     if num_frames == 0:
         raise RuntimeError(f"no images found in {jpg_folder}")
@@ -261,6 +283,8 @@ def load_video_frames_from_jpg_images(
             img_mean,
             img_std,
             compute_device,
+            start_frame=0, # Already sliced above
+            max_frames=None,
         )
         return lazy_images, lazy_images.video_height, lazy_images.video_width
 
@@ -284,6 +308,8 @@ def load_video_frames_from_video_file(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     compute_device=torch.device("cuda"),
+    start_frame=0,
+    max_frames=None,
 ):
     """Load the video frames from a video file."""
     import decord
@@ -293,12 +319,21 @@ def load_video_frames_from_video_file(
     # Get the original video height and width
     decord.bridge.set_bridge("torch")
     video_height, video_width, _ = decord.VideoReader(video_path).next().shape
+    
     # Iterate over all frames in the video
     images = []
-    for frame in decord.VideoReader(video_path, width=image_size, height=image_size):
-        images.append(frame.permute(2, 0, 1))
+    vr = decord.VideoReader(video_path, width=image_size, height=image_size)
+    
+    if max_frames is None:
+        max_frames = len(vr) - start_frame
+    else:
+        max_frames = min(max_frames, len(vr) - start_frame)
+        
+    # Use get_batch for potentially faster loading
+    indices = range(start_frame, start_frame + max_frames)
+    frames = vr.get_batch(indices)
+    images = frames.permute(0, 3, 1, 2).float() / 255.0
 
-    images = torch.stack(images, dim=0).float() / 255.0
     if not offload_video_to_cpu:
         images = images.to(compute_device)
         img_mean = img_mean.to(compute_device)
