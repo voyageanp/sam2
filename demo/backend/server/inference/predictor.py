@@ -598,6 +598,13 @@ class InferenceAPI:
                              video_path = session.get("video_path")
                              offload_video_to_cpu = self.device.type == "mps"
                              
+                             # Explicitly release memory of the old chunk before loading the new one
+                             # to avoid double-buffering (Old Chunk + New Chunk) which causes OOM.
+                             if "state" in session:
+                                 del session["state"]
+                             del inference_state
+                             torch.cuda.empty_cache()
+                             
                              try:
                                  new_inference_state = self.predictor.init_state(
                                     video_path,
@@ -606,6 +613,7 @@ class InferenceAPI:
                                     max_frames=CHUNK_SIZE,
                                  )
                                  logger.info(f"Loaded next chunk. Num frames: {new_inference_state['num_frames']}")
+                                 session["state"] = new_inference_state
                              except Exception as e:
                                  logger.info(f"End of video or error loading next chunk: {e}")
                                  break
@@ -613,8 +621,6 @@ class InferenceAPI:
                              if new_inference_state["num_frames"] <= 1:
                                  logger.info("Next chunk has <= 1 frame. Stopping.")
                                  break
-                                 
-                             session["state"] = new_inference_state
                              
                              # Add mask to frame 0 of new chunk
                              masks_binary = (masks > self.score_thresh)[:, 0]
@@ -689,8 +695,8 @@ class InferenceAPI:
         """Get a statistics string for live sessions and their GPU usage."""
         # print both the session ids and their video frame numbers
         live_session_strs = [
-            f"'{session_id}' ({session['state']['num_frames']} frames, "
-            f"{len(session['state']['obj_ids'])} objects)"
+            f"'{session_id}' ({session.get('state', {}).get('num_frames', 'N/A')} frames, "
+            f"{len(session.get('state', {}).get('obj_ids', []))} objects)"
             for session_id, session in self.session_states.items()
         ]
         session_stats_str = (
