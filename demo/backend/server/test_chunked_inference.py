@@ -5,8 +5,13 @@ from pathlib import Path
 import torch
 import numpy as np
 
+import logging
+
 # Add server directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Mock app_conf before importing predictor
 sys.modules["app_conf"] = MagicMock()

@@ -7,6 +7,7 @@ import contextlib
 import logging
 import os
 import uuid
+import json
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Generator, List
@@ -90,6 +91,27 @@ class InferenceAPI:
             model_cfg, checkpoint, device=device
         )
         self.inference_lock = Lock()
+        
+        # Request recording setup
+        self.record_requests = True
+        self.request_log_path = DATA_PATH / "api_requests.jsonl"
+        
+    def _log_and_save(self, method_name, request):
+        if self.record_requests:
+            try:
+                # Log to logger
+                logger.info(f"API Request [{method_name}]: {request}")
+                
+                # Save to file
+                entry = {
+                    "method": method_name,
+                    "request_type": request.__class__.__name__,
+                    "request_data": request.to_dict()
+                }
+                with open(self.request_log_path, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+            except Exception as e:
+                logger.error(f"Failed to log request: {e}")
 
     def autocast_context(self):
         if self.device.type == "cuda":
@@ -98,6 +120,7 @@ class InferenceAPI:
             return contextlib.nullcontext()
 
     def start_session(self, request: StartSessionRequest) -> StartSessionResponse:
+        self._log_and_save("start_session", request)
         with self.autocast_context(), self.inference_lock:
             session_id = str(uuid.uuid4())
             # for MPS devices, we offload the video frames to CPU by default to avoid
@@ -121,12 +144,14 @@ class InferenceAPI:
             return StartSessionResponse(session_id=session_id)
 
     def close_session(self, request: CloseSessionRequest) -> CloseSessionResponse:
+        self._log_and_save("close_session", request)
         is_successful = self.__clear_session_state(request.session_id)
         return CloseSessionResponse(success=is_successful)
 
     def add_points(
         self, request: AddPointsRequest, test: str = ""
     ) -> PropagateDataResponse:
+        self._log_and_save("add_points", request)
         with self.autocast_context(), self.inference_lock:
             session = self.__get_session(request.session_id)
             inference_state = session["state"]
@@ -202,6 +227,7 @@ class InferenceAPI:
         - mask is a numpy array of shape [H_im, W_im] (containing 1 for foreground and 0 for background).
         Note: providing an input mask would overwrite any previous input points on this frame.
         """
+        self._log_and_save("add_mask", request)
         with self.autocast_context(), self.inference_lock:
             session_id = request.session_id
             frame_idx = request.frame_index
@@ -274,6 +300,7 @@ class InferenceAPI:
         """
         Remove all input points in a specific frame.
         """
+        self._log_and_save("clear_points_in_frame", request)
         with self.autocast_context(), self.inference_lock:
             session_id = request.session_id
             frame_idx = request.frame_index
@@ -339,6 +366,7 @@ class InferenceAPI:
         """
         Remove all input points in all frames throughout the video.
         """
+        self._log_and_save("clear_points_in_video", request)
         with self.autocast_context(), self.inference_lock:
             session_id = request.session_id
             logger.info(f"clear all inputs across the video in session {session_id}")
@@ -351,6 +379,7 @@ class InferenceAPI:
         """
         Remove an object id from the tracking state.
         """
+        self._log_and_save("remove_object", request)
         with self.autocast_context(), self.inference_lock:
             session_id = request.session_id
             obj_id = request.object_id
@@ -379,6 +408,7 @@ class InferenceAPI:
     def propagate_in_video(
         self, request: PropagateInVideoRequest
     ) -> Generator[PropagateDataResponse, None, None]:
+        self._log_and_save("propagate_in_video", request)
         session_id = request.session_id
         start_frame_idx = request.start_frame_index
         propagation_direction = "both"
@@ -482,15 +512,18 @@ class InferenceAPI:
                             )
                 else:
                     # Chunked implementation
+                    logger.info(f"Starting chunked propagation. Mode: {INFERENCE_MODE}, Chunk Size: {CHUNK_SIZE}")
                     while True:
                         inference_state = session["state"]
                         start_frame_offset = inference_state.get("start_frame_offset", 0)
                         num_frames = inference_state["num_frames"]
                         
+                        logger.info(f"Current chunk: start_offset={start_frame_offset}, num_frames={num_frames}")
+                        
                         # Check if we need to jump to a different chunk
                         if start_frame_idx >= start_frame_offset + num_frames:
                              new_start_frame = (start_frame_idx // CHUNK_SIZE) * CHUNK_SIZE
-                             logger.info(f"Jumping to chunk starting at {new_start_frame}")
+                             logger.info(f"Requested frame {start_frame_idx} is outside current chunk. Jumping to chunk starting at {new_start_frame}")
                              
                              video_path = session.get("video_path")
                              offload_video_to_cpu = self.device.type == "mps"
@@ -505,7 +538,10 @@ class InferenceAPI:
                              num_frames = inference_state["num_frames"]
                         
                         local_start_frame_idx = max(0, start_frame_idx - start_frame_offset)
+                        logger.info(f"Propagating in chunk. Global start: {start_frame_idx}, Local start: {local_start_frame_idx}")
+                        
                         last_frame_output = None
+                        frames_processed_in_chunk = 0
                         
                         # Run propagation on current chunk (Forward only)
                         for outputs in self.predictor.propagate_in_video(
@@ -515,13 +551,16 @@ class InferenceAPI:
                             reverse=False,
                         ):
                             if session["canceled"]:
+                                logger.info("Session canceled during propagation")
                                 return None
 
                             frame_idx, obj_ids, video_res_masks = outputs
                             global_frame_idx = frame_idx + start_frame_offset
+                            frames_processed_in_chunk += 1
                             
                             # Capture last frame output
                             if frame_idx == num_frames - 1:
+                                logger.info(f"Reached end of chunk at local frame {frame_idx} (global {global_frame_idx}). Capturing state for next chunk.")
                                 last_frame_output = (obj_ids, video_res_masks)
                             
                             # Skip frames before requested start (e.g. overlap)
@@ -546,11 +585,14 @@ class InferenceAPI:
                                 frame_index=global_frame_idx,
                                 results=rle_mask_list,
                             )
+                        
+                        logger.info(f"Finished propagation in current chunk. Processed {frames_processed_in_chunk} frames.")
                             
                         # Prepare for next chunk
                         if last_frame_output:
                              obj_ids, masks = last_frame_output
                              new_start_offset = start_frame_offset + num_frames - 1 # Overlap 1 frame
+                             logger.info(f"Preparing next chunk. New start offset: {new_start_offset} (Overlap with previous end)")
                              
                              # Load next chunk
                              video_path = session.get("video_path")
@@ -563,17 +605,20 @@ class InferenceAPI:
                                     start_frame=new_start_offset,
                                     max_frames=CHUNK_SIZE,
                                  )
+                                 logger.info(f"Loaded next chunk. Num frames: {new_inference_state['num_frames']}")
                              except Exception as e:
                                  logger.info(f"End of video or error loading next chunk: {e}")
                                  break
                                  
                              if new_inference_state["num_frames"] <= 1:
+                                 logger.info("Next chunk has <= 1 frame. Stopping.")
                                  break
                                  
                              session["state"] = new_inference_state
                              
                              # Add mask to frame 0 of new chunk
                              masks_binary = (masks > self.score_thresh)[:, 0]
+                             logger.info(f"Applying masks from previous chunk to frame 0 of new chunk. Objects: {obj_ids}")
                              for i, obj_id in enumerate(obj_ids):
                                  mask_i = masks_binary[i]
                                  self.predictor.add_new_mask(
@@ -585,7 +630,9 @@ class InferenceAPI:
                                  
                              # Update start_frame_idx to skip the first frame (overlap)
                              start_frame_idx = new_start_offset + 1
+                             logger.info(f"Next chunk setup complete. Resuming propagation from global frame {start_frame_idx}")
                         else:
+                            logger.info("No last frame output captured. Likely reached end of tracking or video.")
                             break
 
             finally:
