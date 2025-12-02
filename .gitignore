@@ -11,3 +11,5 @@ checkpoints/*.pt
 demo/backend/checkpoints/*.pt
 memo.md
 demo/data/*
+.python-version
+notebooks/*ipynb

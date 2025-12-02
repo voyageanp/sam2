@@ -24,10 +24,24 @@ from inference.multipart import MultipartResponseBuilder
 from inference.predictor import InferenceAPI
 from strawberry.flask.views import GraphQLView
 
+# Configure logging to work with gunicorn
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 cors = CORS(app, supports_credentials=True)
+
+# Ensure Flask uses the same logging configuration
+if __name__ != "__main__":
+    # When running under gunicorn, use gunicorn's logger
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
 
 videos = preload_data()
 set_videos(videos)
